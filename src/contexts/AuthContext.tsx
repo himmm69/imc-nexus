@@ -1,75 +1,119 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '@/types';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabaseClient';
+import { Database } from '@/types/supabase';
 
-// Firebase integration point:
-// import { auth } from '@/lib/firebase';
-// import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+type Profile = Database['public']['Tables']['profiles']['Row'];
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean;
-  login: (method: 'google' | 'email') => void;
-  logout: () => void;
+  profile: Profile | null;
+  session: Session | null;
+  loading: boolean;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'imc-study-hub-user';
-
-// Mock user for demo
-const mockUser: User = {
-  id: 'user-1',
-  name: 'Alex Student',
-  email: 'alex.student@edu.fh-krems.ac.at',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check localStorage for existing session
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
-    setIsLoading(false);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
 
-    // Firebase integration:
-    // const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-    //   if (firebaseUser) {
-    //     setUser({ id: firebaseUser.uid, name: firebaseUser.displayName, ... });
-    //   } else {
-    //     setUser(null);
-    //   }
-    //   setIsLoading(false);
-    // });
-    // return () => unsubscribe();
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = (method: 'google' | 'email') => {
-    // Mock login - in real app, use Firebase auth
-    console.log(`Login with ${method}`);
-    setUser(mockUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(mockUser));
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    // Firebase integration:
-    // if (method === 'google') {
-    //   signInWithPopup(auth, new GoogleAuthProvider());
-    // }
+      if (error) throw error;
+      setProfile(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+  const signUp = async (email: string, password: string, fullName: string) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
+      });
 
-    // Firebase integration:
-    // signOut(auth);
+      if (error) return { error };
+
+      // Profile will be created by database trigger
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    }
   };
+
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) return { error };
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const isAdmin = profile?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, signUp, signIn, signOut, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

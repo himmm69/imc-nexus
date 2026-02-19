@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Bell, Menu, LogOut, User, Settings } from 'lucide-react';
+import { Bell, Menu, LogOut, User as UserIcon, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,9 +15,34 @@ import { useAuth } from '@/contexts/AuthContext';
 import { GlobalSearch } from '@/components/search/GlobalSearch';
 
 export function TopBar() {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // ---- Safe derived fields (Supabase-friendly) ----
+  const email =
+    (user as any)?.email ||
+    (user as any)?.user?.email || // in case your context wraps supabase session.user
+    '';
+
+  const meta =
+    (user as any)?.user_metadata ||
+    (user as any)?.user?.user_metadata ||
+    {};
+
+  const displayName =
+    meta?.full_name ||
+    meta?.name ||
+    (email ? email.split('@')[0] : '') ||
+    'User';
+
+  const avatarUrl =
+    meta?.avatar_url ||
+    meta?.picture ||
+    ''; // leave blank if none
+
+  const initial = (displayName?.trim()?.[0] || 'U').toUpperCase();
+  // -----------------------------------------------
 
   return (
     <header className="sticky top-0 z-50 flex h-14 items-center gap-4 border-b bg-background px-4 lg:px-6">
@@ -43,19 +67,20 @@ export function TopBar() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                  <AvatarImage src={avatarUrl} alt={displayName} />
+                  <AvatarFallback>{initial}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
+
             <DropdownMenuContent className="w-56 bg-popover" align="end" forceMount>
               <div className="flex flex-col space-y-1 p-2">
-                <p className="text-sm font-medium">{user.name}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
+                <p className="text-sm font-medium">{displayName}</p>
+                <p className="text-xs text-muted-foreground">{email}</p>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/profile')}>
-                <User className="mr-2 h-4 w-4" />
+                <UserIcon className="mr-2 h-4 w-4" />
                 Profile
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/settings')}>
@@ -63,7 +88,7 @@ export function TopBar() {
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout}>
+              <DropdownMenuItem onClick={signOut}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Log out
               </DropdownMenuItem>

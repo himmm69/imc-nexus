@@ -30,7 +30,7 @@ const mainNavItems = [
   { title: 'Home', url: '/', icon: Home },
   { title: 'Modules', url: '/modules', icon: BookOpen },
   { title: 'Notes', url: '/notes', icon: FileText },
-  { title: 'Past Papers', url: '/papers', icon: FolderOpen },
+  { title: 'Past Papers', url: '/past-papers', icon: FolderOpen },
   { title: 'Practice', url: '/practice', icon: Brain },
 ];
 
@@ -43,7 +43,7 @@ export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -117,6 +117,34 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/70">
+              {!collapsed && 'Admin'}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive('/admin')}
+                    tooltip="Admin"
+                  >
+                    <NavLink
+                      to="/admin"
+                      className="flex items-center gap-3"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      {!collapsed && <span>Admin</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4">

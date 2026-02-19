@@ -20,6 +20,12 @@ export default function NoteDetailPage() {
   const isUpvoted = note ? upvotes.includes(note.id) : false;
   const isBookmarked = note ? bookmarks.includes(note.id) : false;
 
+  const buyLinks = [
+    { label: "Amazon", href: "https://www.amazon.com/Career-Heist-Control-Professional-Journey/dp/9360456268" },
+    { label: "Flipkart", href: "https://www.flipkart.com/career-heist-navigate-your/p/itm7b0b458b89df4" },
+    { label: "Thalia", href: "https://www.thalia.at/shop/home/artikeldetails/A1074399871" },
+  ];
+
   if (!note) {
     return (
       <div className="container mx-auto px-4 py-8 text-center">
@@ -217,6 +223,24 @@ export default function NoteDetailPage() {
                     <Clock className="h-4 w-4" />
                     <span>Updated {note.updatedAt}</span>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold mb-3">Buy the Book</h3>
+                <div className="space-y-2">
+                  {buyLinks.map((link) => (
+                    <a
+                      key={link.label}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-sm text-primary hover:underline"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
                 </div>
               </CardContent>
             </Card>

@@ -11,6 +11,8 @@ type Paper = Database["public"]["Tables"]["papers"]["Row"] & {
   topics: { name: string } | null;
 };
 
+const BUCKET = "question-papers" as const;
+
 export default function PastPapers() {
   const { data: papers, isLoading } = useQuery({
     queryKey: ["past-papers"],
@@ -34,13 +36,28 @@ export default function PastPapers() {
     },
   });
 
-  const handleDownload = (filePath: string) => {
-    const { data } = supabase.storage.from("question-papers").getPublicUrl(filePath);
+  const handleDownload = async (filePath: string | null) => {
+    try {
+      if (!filePath || !filePath.trim()) {
+        toast.error("Download failed", { description: "Missing file path." });
+        return;
+      }
 
-    if (data?.publicUrl) {
-      window.open(data.publicUrl, "_blank");
-    } else {
-      toast.error("Download failed", { description: "No public URL available." });
+      const normalizedPath = filePath.replace(/^\/+/, "");
+
+      const { data, error } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(normalizedPath, 60);
+
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error("Failed to create signed URL");
+
+      const opened = window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      if (!opened) window.location.href = data.signedUrl;
+    } catch (err) {
+      toast.error("Download failed", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
     }
   };
 
@@ -64,9 +81,7 @@ export default function PastPapers() {
       <Card>
         <CardHeader>
           <CardTitle>Available Past Papers</CardTitle>
-          <CardDescription>
-            Only approved past papers are shown here
-          </CardDescription>
+          <CardDescription>Only approved past papers are shown here</CardDescription>
         </CardHeader>
         <CardContent>
           {papers && papers.length > 0 ? (
@@ -90,6 +105,7 @@ export default function PastPapers() {
                         size="sm"
                         variant="outline"
                         onClick={() => handleDownload(paper.file_path)}
+                        disabled={!paper.file_path}
                       >
                         <Download className="h-4 w-4 mr-2" />
                         Download

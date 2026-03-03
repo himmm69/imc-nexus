@@ -12,6 +12,54 @@ type Paper = Database['public']['Tables']['papers']['Row'] & {
   profiles: { full_name: string | null } | null;
 };
 
+const BUCKET = 'question-papers' as const;
+
+function normalizePath(p: string) {
+  return p.replace(/^\/+/, '');
+}
+
+function pendingToApprovedPath(filePath: string) {
+  const normalized = normalizePath(filePath);
+  // pending/... -> approved/...
+  if (normalized.startsWith('pending/')) return normalized.replace(/^pending\//, 'approved/');
+  return normalized;
+}
+
+async function approvePaper(paperId: number, filePath: string) {
+  const fromPath = normalizePath(filePath);
+  const toPath = pendingToApprovedPath(fromPath);
+
+  // 1) Move the file in storage
+  const { error: moveError } = await supabase.storage
+    .from(BUCKET)
+    .move(fromPath, toPath);
+
+  if (moveError) {
+    throw new Error(`Storage move failed: ${moveError.message}`);
+  }
+
+  // 2) Update DB to approved + new file_path
+  const { error: dbError } = await supabase
+    .from('papers')
+    .update({ status: 'approved', file_path: toPath })
+    .eq('id', paperId);
+
+  if (dbError) {
+    // best-effort rollback so you don't lose the pending file path
+    await supabase.storage.from(BUCKET).move(toPath, fromPath);
+    throw new Error(`DB update failed: ${dbError.message}`);
+  }
+}
+
+async function rejectPaper(paperId: number) {
+  const { error } = await supabase
+    .from('papers')
+    .update({ status: 'rejected' })
+    .eq('id', paperId);
+
+  if (error) throw error;
+}
+
 export default function Admin() {
   const queryClient = useQueryClient();
 
@@ -27,7 +75,7 @@ export default function Admin() {
           file_path,
           status,
           topics (name),
-          profiles (full_name)
+          profiles!papers_uploader_id_fkey (full_name)
         `)
         .eq('status', 'pending');
 
@@ -37,22 +85,31 @@ export default function Admin() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ paperId, status }: { paperId: number; status: 'approved' | 'rejected' }) => {
-      const { error } = await (supabase as any)
-        .from('papers')
-        .update({ status })
-        .eq('id', paperId);
+    mutationFn: async ({
+      paperId,
+      status,
+      filePath,
+    }: {
+      paperId: number;
+      status: 'approved' | 'rejected';
+      filePath: string | null;
+    }) => {
+      if (status === 'approved') {
+        if (!filePath) throw new Error('Missing file_path for this paper');
+        await approvePaper(paperId, filePath);
+        return;
+      }
 
-      if (error) throw error;
+      await rejectPaper(paperId);
     },
     onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['pending-papers'] });
-      toast.success(
-        status === 'approved' ? 'Paper approved' : 'Paper rejected',
-        {
-          description: `The paper has been ${status}`,
-        }
-      );
+      // optional: if you have a query on the Past Papers page, keep its key consistent and invalidate it too
+      queryClient.invalidateQueries({ queryKey: ['approved-papers'] });
+
+      toast.success(status === 'approved' ? 'Paper approved' : 'Paper rejected', {
+        description: `The paper has been ${status}`,
+      });
     },
     onError: (error) => {
       toast.error('Action failed', {
@@ -61,12 +118,12 @@ export default function Admin() {
     },
   });
 
-  const handleApprove = (paperId: number) => {
-    updateStatusMutation.mutate({ paperId, status: 'approved' });
+  const handleApprove = (paperId: number, filePath: string | null) => {
+    updateStatusMutation.mutate({ paperId, status: 'approved', filePath });
   };
 
-  const handleReject = (paperId: number) => {
-    updateStatusMutation.mutate({ paperId, status: 'rejected' });
+  const handleReject = (paperId: number, filePath: string | null) => {
+    updateStatusMutation.mutate({ paperId, status: 'rejected', filePath });
   };
 
   const { data: stats } = useQuery({
@@ -185,7 +242,7 @@ export default function Admin() {
                         size="sm"
                         variant="default"
                         className="bg-green-600 hover:bg-green-700"
-                        onClick={() => handleApprove(paper.id)}
+                        onClick={() => handleApprove(paper.id, paper.file_path)}
                         disabled={updateStatusMutation.isPending}
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
@@ -196,7 +253,7 @@ export default function Admin() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => handleReject(paper.id)}
+                        onClick={() => handleReject(paper.id, paper.file_path)}
                         disabled={updateStatusMutation.isPending}
                       >
                         <XCircle className="h-4 w-4 mr-1" />
